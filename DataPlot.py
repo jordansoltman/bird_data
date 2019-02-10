@@ -5,19 +5,25 @@ import csv
 import numpy as np
 import time
 
-MAX_PROMINENCE = 6.0
-FALSE_MAXIMUM_ROW_DISTANCE = 10
+colorSets = ['blue', 'orange', 'purple', 'greenyellow', 'brown', 'gold', 'lightskyblue', 'gray', 'blueviolet', 'olive']
+
+plt.interactive(False)
 
 class DataPlot:
 
-    def __init__(self, column, xData, yData, doneCallback):
+    def __init__(self, column, xData, yData, doneCallback, skipCallback, dumpCallback, exitCallback, doneButtonTitle='Done', MAX_PROMINENCE=6.0, FALSE_MAXIMUM_ROW_DISTANCE = 30):
+
+        self.MAX_PROMINENCE = MAX_PROMINENCE
+        self.FALSE_MAXIMUM_ROW_DISTANCE = FALSE_MAXIMUM_ROW_DISTANCE
 
         self.yData = yData
         self.xData = xData
 
         self.doneCallback = doneCallback
+        self.skipCallback = skipCallback
+        self.dumpCallback = dumpCallback
+        self.exitCallback = exitCallback
 
-        self.offset = False
         self.minimums = []
         self.maximums = []
         self.automaticallyInterpretedData = False
@@ -52,7 +58,7 @@ class DataPlot:
 
         self.ax.name = 'main'
 
-        self.fig.subplots_adjust(bottom=0.27)
+        self.fig.subplots_adjust(bottom=0.27, top=0.92, left=0.08, right=0.94)
 
         # Define an axes area and draw a slider in it
         min_prom_slider_ax = self.fig.add_axes([0.25, 0.17, 0.65, 0.03])
@@ -65,11 +71,26 @@ class DataPlot:
         self.min_prom_slider.on_changed(self.updateProminence)
         self.max_prom_slider.on_changed(self.updateProminence)
 
-        # axprev = plt.axes([0.7, 0.05, 0.1, 0.075])
-        doneBtn = plt.axes([0.81, 0.05, 0.1, 0.045])
+        # axprev =
+        doneButtonAxes = plt.axes([0.80, 0.05, 0.1, 0.045])
+        self.doneButton = plt.Button(doneButtonAxes, doneButtonTitle)
+        self.doneButton.on_clicked(self.done)
 
-        bnext = plt.Button(doneBtn, 'Done')
-        bnext.on_clicked(self.done)
+        resetBtn = plt.axes([0.70, 0.05, 0.1, 0.045])
+        self.resetButton = plt.Button(resetBtn, 'Reset')
+        self.resetButton.on_clicked(self.reset)
+
+        skipButtonAxes = plt.axes([0.60, 0.05, 0.1, 0.045])
+        self.skipButton = plt.Button(skipButtonAxes, 'Skip')
+        self.skipButton.on_clicked(self.skip)
+
+        dumpButtonAxes = plt.axes([0.50, 0.05, 0.1, 0.045])
+        dumpButton = plt.Button(dumpButtonAxes, 'Dump')
+        dumpButton.on_clicked(self.dump)
+
+        exitButtonAxes = plt.axes([0.40, 0.05, 0.1, 0.045])
+        exitButton = plt.Button(exitButtonAxes, 'Exit')
+        exitButton.on_clicked(self.exit)
 
         self.fig.canvas.mpl_connect('button_press_event', self.onclick)
 
@@ -80,15 +101,41 @@ class DataPlot:
 
         self.plotData()
         plt.show()
+        plt.clf()
+        plt.cla()
+        plt.close()
 
     # This function assumes well formatted minimums and maximums
-    def getMaximumMinimumValues(self):
-        dataLength = len(self.minimums)
+    def getMaximumMinimumPairs(self):
+        minimums, maximums = self.getOrderedMaximumAndMinimum()
+        results = []
+        dataLength = max(len(maximums), len(minimums))
         for i in range(0, dataLength):
-            
+            if i < len(minimums):
+                _min = self.minimums[i]
+                minX = self.xData[_min]
+                minY = self.yData[_min]
+            else:
+                minX = '-'
+                minY = '-'
 
-    # This function assumes well formatted minimums and maximums
+            if i < len(maximums):
+                _max = self.maximums[i]
+                maxX = self.xData[_max]
+                maxY = self.xData[_max]
+            else:
+                maxX = '-'
+                maxY = '-'
+            results.append(((minX, minY), (maxX, maxY)))
+        return results
+
+    def minMaxAreOffset(self):
+        return sorted(self.minimums)[0] > sorted(self.maximums)[0]
+
+    # This function assumes well formatted minimums and maximums of the same length
     def determineAveragePeakHeightWidth(self):
+
+        minimums, maximums = self.getOrderedMaximumAndMinimum()
 
         dataLength = len(self.minimums)
         dataMaxX = self.xData[-1]
@@ -97,17 +144,15 @@ class DataPlot:
         totalHeight = 0
 
         for i in range(0, dataLength):
-            min = self.minimums[i]
-            max = self.maximums[i]
+            min = minimums[i]
+            max = maximums[i]
             minX = self.xData[min]
             minY = self.yData[min]
             maxX = self.xData[max]
             maxY = self.yData[max]
 
-            # special case for offset graphs because they wrap around
-            if i == 0 and self.offset:
-                totalWidth += (dataMaxX - minX) + (maxX - dataMinX)
-            else:
+            # we discard offset data
+            if i != 0 or not self.minMaxAreOffset():
                 totalWidth += maxX - minX
 
             totalHeight += maxY - minY
@@ -115,24 +160,82 @@ class DataPlot:
         averageHeight = totalHeight / dataLength
         averageWidth = totalWidth / dataLength
 
+        # We can't calculate the offset for a single vale
+        if self.minMaxAreOffset() and dataLength == 1:
+            averageWidth = 'N/A'
+
         return (averageHeight, averageWidth)
 
-    def done(self, val):
-        if len(self.minimums) != len(self.maximums):
-            print("ERROR: Different number of minimums than maximums!")
-            return
-        averageHeight, averageWidth = self.determineAveragePeakHeightWidth()
-        print(averageHeight, averageWidth)
-        self.doneCallback(self.column, (self.minimums, self.maximums))
+    def validateMinMaxCorrectLength(self):
+        minimums, maximums = self.getOrderedMaximumAndMinimum()
+        reqPeaks = self.requiredPeaks()
+        return reqPeaks == len(minimums) and reqPeaks == len(maximums)
+
+    def validateMinMax(self, verbose=False):
+
+        minimums, maximums = self.getOrderedMaximumAndMinimum()
+
+        if len(minimums) != len(maximums):
+            if verbose:
+                print("ERROR: Different number of minimums than maximums!")
+            return False
+        if len(minimums) == 0 or len(maximums) == 0:
+            if verbose:
+                print("ERROR: Minimums or maximums array length is zero.")
+            return False
+
+        # check that the data is in proper order
+        offset = self.minMaxAreOffset()
+        if (offset and minimums[0] < maximums[0]) or (not offset and minimums[0] > maximums[0]):
+            if verbose:
+                print("ERROR: minimums/maximums not in proper order")
+            return False
+
+        for i in range(1, len(minimums)):
+            if (minimums[i] > maximums[i]):
+                if verbose:
+                    print("ERROR: minimums/maximums not in proper order")
+                return False
+        return True
+
+    def reset(self, val):
+        self.determineMaxProminence()
+        self.determineMinProminence()
+        self.attemptAutomaticDataInterpretation()
+        self.plotData()
+
+    def skip(self, val):
+        self.skipCallback()
         plt.close()
-        print("EXPORT")
+
+    def exit(self, val):
+        self.exitCallback()
+
+    def dump(self, val):
+        self.dumpCallback()
+
+    # holding f key while clicking done overrides validation for better or for worse
+    def done(self, event):
+        if event.key != 'f' and not self.validateMinMax(verbose=True):
+            return
+        # We can't calculate the average height and average duration if it's forced
+        if event.key != 'f':
+            averageHeight, averageDuration = self.determineAveragePeakHeightWidth()
+        else:
+            averageHeight = averageDuration = 'N/A'
+        minMaxPairs = self.getMaximumMinimumPairs()
+        self.doneCallback(self.column, minMaxPairs, averageHeight, averageDuration)
+        plt.show(block=True)
+        plt.clf()
+        plt.cla()
+        plt.close()
 
     def title(self):
-        return self.color + ", Intensity " + str(self.intensity) + " @ " + str(self.fps) + " fps (" + self.column + ")"
+        return self.color + ", Intensity " + str(self.intensity) + " @ " + str(self.fps) + " fps (" + self.column + ") Expecting " + str(self.requiredPeaks()) + " peaks"
 
     def determineMaxProminence(self):
-        maxAndMin = math.ceil(self.fps / 5.0)
-        self.max_prominence = MAX_PROMINENCE
+        maxAndMin = self.requiredPeaks()
+        self.max_prominence = self.MAX_PROMINENCE
 
         while self.max_prominence > 0.0:
             self.max_prominence -= .1
@@ -145,8 +248,8 @@ class DataPlot:
 
     def determineMinProminence(self):
         # determine how many peaks we are looking for
-        maxAndMin = math.ceil(self.fps / 5.0)
-        self.min_prominence = MAX_PROMINENCE
+        maxAndMin = self.requiredPeaks()
+        self.min_prominence = self.MAX_PROMINENCE
 
         while self.min_prominence > 0.0:
             self.min_prominence -= .1
@@ -155,6 +258,9 @@ class DataPlot:
 
         time.sleep(.2)
         self.min_prom_slider.set_val(self.min_prominence)
+
+    def requiredPeaks(self):
+        return math.ceil(self.fps / 5.0)
 
     def updateProminence(self, val):
         self.min_prominence = self.min_prom_slider.val
@@ -167,7 +273,7 @@ class DataPlot:
         result = []
         for idx, val in enumerate(peaks):
             if idx == len(peaks) - 1 or \
-                    abs(peaks[idx] - peaks[idx + 1]) > FALSE_MAXIMUM_ROW_DISTANCE or \
+                    abs(peaks[idx] - peaks[idx + 1]) > self.FALSE_MAXIMUM_ROW_DISTANCE or \
                     self.yData[peaks[idx]] != self.yData[peaks[idx + 1]]:
                 result.append(val)
         return np.array(result)
@@ -187,38 +293,27 @@ class DataPlot:
         minPeaks = self.findMinPeaks()
         maxPeaks = self.findMaxPeaks()
 
-        numPeaks = len(maxPeaks)
+        # make smarter b_1_40
 
-        # we must have the same number of peaks
-        if len(maxPeaks) != len(minPeaks) or numPeaks == 0:
-            return
-
-        # offset means that a max comes before a min, in which case we compensate
-        if minPeaks[0] > maxPeaks[0]:
-            self.offset = True
-
-        # ensure that all of the data points are in order
-        for i in range(0, numPeaks):
-            if  (self.offset and maxPeaks[i] > minPeaks[i]) or \
-                (not self.offset and minPeaks[i] > maxPeaks[i]):
-                return
-
-        #if we get here we know that the data must be formatted well
-        self.automaticallyInterpretedData = True
-
-        if not self.offset:
-            self.minimums = minPeaks
-            self.maximums = maxPeaks
-
-        if self.offset:
-            self.maximums = maxPeaks
-            self.minimums = np.append(minPeaks[1:],minPeaks[0])
-
-
-
+        self.minimums = minPeaks
+        self.maximums = maxPeaks
 
     def plotData(self):
         maxima, minima = self.findPeaks()
+
+        validated = self.validateMinMax()
+        correctLength = self.validateMinMaxCorrectLength()
+
+        if validated and correctLength:
+            self.doneButton.color = 'green'
+            self.doneButton.hovercolor = 'darkgreen'
+        elif validated and not correctLength:
+            self.doneButton.color = 'yellow'
+            self.doneButton.hovercolor = 'gold'
+        else:
+            self.doneButton.color = 'red'
+            self.doneButton.hovercolor = 'darkred'
+
         self.ax.clear()
         self.ax.set_title(self.title())
         self.ax.plot(self.xData, self.yData)
@@ -227,24 +322,100 @@ class DataPlot:
         if len(minima) > 0:
             self.ax.plot(self.xData[minima], self.yData[minima], "o", alpha=0.7, color='darkred')
 
-        for idx, val in enumerate(self.minimums):
-            self.ax.annotate(str(idx + 1) + " min", (self.xData[val], self.yData[val]), textcoords='offset pixels', xytext=(10, -15), fontweight='bold',
-                    fontsize=8, color='darkred')
+        minimums, maximiums = self.getOrderedMaximumAndMinimum()
 
-        for idx, val in enumerate(self.maximums):
+        for idx, val in enumerate(minimums):
+            self.ax.annotate(str(idx + 1) + " min", (self.xData[val], self.yData[val]), textcoords='offset pixels', xytext=(15, -15), fontweight='bold',
+                    fontsize=8, color=colorSets[idx % len(colorSets)], arrowprops={'arrowstyle': '->'})
+
+        for idx, val in enumerate(maximiums):
             self.ax.annotate(str(idx + 1) + " max", (self.xData[val], self.yData[val]), textcoords='offset pixels',
-                             xytext=(10, 10), fontweight='bold',
-                             fontsize=8, color='darkgreen')
+                             xytext=(15, 15), fontweight='bold',
+                             fontsize=8, color=colorSets[idx % len(colorSets)], arrowprops={'arrowstyle': '->'})
 
         plt.show(block=False)
+        plt.draw()
+        self.fig.canvas.flush_events()
+
+    # orders the minimums and maximums taking account for any offsets that may be in place
+    def getOrderedMaximumAndMinimum(self):
+
+        maximums = sorted(self.maximums)
+        minimums = sorted(self.minimums)
+
+        if len(maximums) == 0 or len(minimums) == 0:
+            return (minimums, maximums)
+
+        if self.minMaxAreOffset():
+            minArray = [minimums[-1]]
+            minArray.extend(minimums[:-1])
+            return (minArray, maximums)
+        else:
+            return (minimums, maximums)
+
+    def addRemoveMinMax(self, clickX, clickY):
+
+        # we create sets here so we only get the unique values
+        minSet = set(self.findMinPeaks())
+        minSet.update(self.minimums)
+
+        maxSet = set(self.findMaxPeaks())
+        maxSet.update(self.maximums)
+
+        minPeakDistances = []
+        maxPeakDistances = []
+
+        minList = list(minSet)
+        maxList = list(maxSet)
+
+
+        # Since the x/y scales are different we get the aspect ratio to better
+        # determine which point was closest to being clicked
+        yb, yt = self.ax.get_ylim()
+        xl, xr = self.ax.get_xlim()
+
+        aspect = abs(yt - yb) / abs(xl - xr)
+
+        for val in minList:
+            peakX = self.xData[val]
+            peakY = self.yData[val]
+            distance = math.hypot(aspect * (clickX - peakX), clickY - peakY)
+            minPeakDistances.append(distance)
+
+        for val in maxList:
+            peakX = self.xData[val]
+            peakY = self.yData[val]
+            distance = math.hypot(aspect * (clickX - peakX), clickY - peakY)
+            maxPeakDistances.append(distance)
+
+        closestMinPeak = min(minPeakDistances)
+        closestMaxPeak = min(maxPeakDistances)
+
+        if closestMinPeak < closestMaxPeak:
+            idx = minPeakDistances.index(closestMinPeak)
+            val = minList[idx]
+            self.insertRemoveMin(val)
+        else:
+            idx = maxPeakDistances.index(closestMaxPeak)
+            val = maxList[idx]
+            self.insertRemoveMax(val)
+
+    def insertRemoveMax(self, val):
+        if val in self.maximums:
+            self.maximums = self.maximums[self.maximums != val]
+        else:
+            self.maximums = np.append(self.maximums, val)
+
+    def insertRemoveMin(self, val):
+        if val in self.minimums:
+            self.minimums = self.minimums[self.minimums != val]
+        else:
+            self.minimums = np.append(self.minimums, val)
 
     def onclick(self, event):
+        # only do something if we are over the graph
         if event.inaxes == None or event.inaxes.name != 'main':
             return
-        print('%s click: button=%d, x=%d, y=%d, xdata=%f, ydata=%f' %
-              ('double' if event.dblclick else 'single', event.button,
-               event.x, event.y, event.xdata, event.ydata))
 
-        self.ax.annotate("1 min", (event.xdata, event.ydata), textcoords='offset pixels', xytext=(10, -10), fontweight='bold',
-                    fontsize=8, color='darkred')
-        plt.draw()
+        self.addRemoveMinMax(event.xdata, event.ydata)
+        self.plotData()

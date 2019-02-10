@@ -1,55 +1,14 @@
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
-import csv
-import numpy as np
-import DataPlot
+import argparse
+import BirdData
 
-plt.interactive(False)
-# b - blue
-# uv - ultraviolet
-# bw - white
+parser = argparse.ArgumentParser(allow_abbrev=False)
+parser.add_argument("source", type=str, help="Source file to get data from.")
+parser.add_argument("-o", "--output", type=str, help="Output file.")
+parser.add_argument('-b', help="Process background columns.", action='store_true')
+parser.add_argument("-c", '--columns', nargs='+', default=None, help="Supply specific columns instead of iterating through all available columns.")
+parser.add_argument('-s', "--start", type=str, default=None, help="Column to start at.")
+args = vars(parser.parse_args())
 
-
-def extractData(xFieldname, yFieldname, data):
-    xData = []
-    yData = []
-    for row in data:
-        xData.append(float(row[xFieldname]))
-        yData.append(float(row[yFieldname]))
-    return (np.array(xData), np.array(yData))
-
-def openFile(filename):
-    try:
-        with open(filename) as csvfile:
-            reader = csv.DictReader(csvfile)
-            # First we need to determine the columns that are available
-            # and we can assume that the first column is the time series
-            fieldnames = list(reader.fieldnames)
-            dataFieldNames = []
-
-            for fieldname in fieldnames:
-                if fieldname != '' and not fieldname.lower().startswith('time'):
-                    dataFieldNames.append(fieldname)
-            rows = list(reader)
-            return (fieldnames[0], dataFieldNames, rows)
-    except:
-        print("There was an error opening ", filename)
-
-def done(column, data):
-    print(column, data)
-
-rawData = openFile('/Users/jordansoltman/Desktop/sample_data.csv')
-timeField = rawData[0]
-fields = rawData[1]
-data = rawData = rawData[2]
-
-# axis = plt.axes()
-# plt.Slider(axis, 'test', 1, 10)
-
-
-
-xData, yData = extractData(timeField, 'B_1_10', data)
-
-
-dataPlot = DataPlot.DataPlot('B_1_10', xData, yData, done)
-dataPlot.plotData()
+BirdData.BirdData(args['source'], columns=args['columns'], output=args['output'], background=args['b'], startColumn = args['start'])
