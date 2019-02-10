@@ -7,8 +7,9 @@ class PlotDataWriter:
     def __init__(self):
         self.data = {}
 
-    def addLine(self, column, minMaxPairs, averageHeight, averageDuration):
+    def addLine(self, column, forced, minMaxPairs, averageHeight, averageDuration):
         self.data[column] = {
+            'forced': str(forced).lower(),
             'minMaxPairs': minMaxPairs,
             'averageHeight': averageHeight,
             'averageDuration': averageDuration
@@ -22,7 +23,7 @@ class PlotDataWriter:
             if len(row['minMaxPairs']) > maxPairs:
                 maxPairs = len(row['minMaxPairs'])
 
-        fieldnames = ['Series', 'Avg. Duration', 'Avg. Height']
+        fieldnames = ['Series', 'Forced', 'Avg. Duration', 'Avg. Height']
         for i in range(0, maxPairs):
             fieldnames.append(str(i + 1) + ' Min X,Y')
             fieldnames.append(str(i + 1) + ' Max X,Y')
@@ -43,7 +44,7 @@ class PlotDataWriter:
 
                 for column in self.data:
                     data = self.data[column]
-                    row = [column, data['averageDuration'], data['averageHeight']]
+                    row = [column, data['forced'], data['averageDuration'], data['averageHeight']]
                     for pair in data['minMaxPairs']:
                         _min, _max = pair
                         minX, minY = _min

@@ -9,6 +9,7 @@ class BirdData:
         self.dataExtractor = DataExtractor.DataExtractor(filename)
         self.plotDataWriter = PlotDataWriter.PlotDataWriter()
         self.ouputFilename = output
+        self.dataPlot = DataPlot.DataPlot(self.done, self.skip, self.dump, self.exit)
         availableColumns = self.dataExtractor.getAvailableColumns(background)
 
         #Ensure that the column names are valid
@@ -44,13 +45,13 @@ class BirdData:
             column = self.columnsToPlot.pop(0)
             xData, yData = self.dataExtractor.extractData(column)
             title = 'Finish' if len(self.columnsToPlot) == 0 else 'Next'
-            self.current = DataPlot.DataPlot(column, xData, yData, self.done, self.skip, self.dump, self.exit, doneButtonTitle=title)
+            self.dataPlot.initializePlot(column, xData, yData, doneButtonTitle=title)
         else:
             self.plotDataWriter.writeToFile(self.ouputFilename)
             sys.exit()
 
-    def done(self, column, minMaxPairs, averageHeight, averageDuration):
-        self.plotDataWriter.addLine(column, minMaxPairs, averageHeight, averageDuration)
+    def done(self, column, forced, minMaxPairs, averageHeight, averageDuration):
+        self.plotDataWriter.addLine(column, forced, minMaxPairs, averageHeight, averageDuration)
         self.plotNext()
 
     def skip(self):
