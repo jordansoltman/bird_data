@@ -9,7 +9,7 @@ colorSets = ['blue', 'orange', 'purple', 'magenta', 'brown', 'gold', 'lightskybl
 
 class DataPlot:
 
-    def __init__(self, doneCallback, skipCallback, dumpCallback, exitCallback, MAX_PROMINENCE=6.0, FALSE_MAXIMUM_ROW_DISTANCE = 30):
+    def __init__(self, doneCallback, skipCallback, dumpCallback, exitCallback, prevCallback, MAX_PROMINENCE=6.0, FALSE_MAXIMUM_ROW_DISTANCE = 30):
 
         self.MAX_PROMINENCE = MAX_PROMINENCE
         self.FALSE_MAXIMUM_ROW_DISTANCE = FALSE_MAXIMUM_ROW_DISTANCE
@@ -18,12 +18,15 @@ class DataPlot:
         self.skipCallback = skipCallback
         self.dumpCallback = dumpCallback
         self.exitCallback = exitCallback
+        self.prevCallback = prevCallback
 
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
 
         self.ax.set_xlabel("Time")
         self.ax.set_ylabel("Voltage")
+
+        self.titleColor = 'black'
 
         self.ax.name = 'main'
 
@@ -58,18 +61,22 @@ class DataPlot:
         self.dumpButton = plt.Button(dumpButtonAxes, 'Dump')
         self.dumpButton.on_clicked(self.dump)
 
-        exitButtonAxes = plt.axes([0.36, 0.05, 0.1, 0.045])
-        self.exitButton = plt.Button(exitButtonAxes, 'Exit')
-        self.exitButton.on_clicked(self.exit)
-
-        clearButtonAxes = plt.axes([0.25, 0.05, 0.1, 0.045])
+        clearButtonAxes = plt.axes([0.36, 0.05, 0.1, 0.045])
         self.clearButton = plt.Button(clearButtonAxes, 'Clear')
         self.clearButton.on_clicked(self.clear)
+
+        prevButtonAxes = plt.axes([0.25, 0.05, 0.1, 0.045])
+        self.prevButton = plt.Button(prevButtonAxes, 'Prev')
+        self.prevButton.on_clicked(self.prev)
+
+        exitButtonAxes = plt.axes([0.14, 0.05, 0.1, 0.045])
+        self.exitButton = plt.Button(exitButtonAxes, 'Exit')
+        self.exitButton.on_clicked(self.exit)
 
         self.fig.canvas.mpl_connect('button_press_event', self.onclick)
 
 
-    def initializePlot(self, column, xData, yData, doneButtonTitle='Done'):
+    def initializePlot(self, column, xData, yData, saved, forced, doneButtonTitle='Done'):
 
         self.yData = yData
         self.xData = xData
@@ -107,7 +114,15 @@ class DataPlot:
 
         self.attemptAutomaticDataInterpretation()
 
+        if forced:
+            self.titleColor = 'red'
+        elif saved:
+            self.titleColor = 'green'
+        else:
+            self.titleColor = 'black'
+
         self.plotData()
+
         plt.show() # I don't know why but this has to be here
 
     # This function assumes well formatted minimums and maximums
@@ -178,14 +193,14 @@ class DataPlot:
         if len(minimums) == 0 or len(maximums) == 0:
             if verbose:
                 print("ERROR: Minimums or maximums array length is zero.")
-            return (False, -1)
+            return (False, -1, 'zero_length')
 
         # check that the data is in proper order
         offset = self.minMaxAreOffset(minimums, maximums)
         if (offset and minimums[0] < maximums[0]) or (not offset and minimums[0] > maximums[0]):
             if verbose:
                 print("ERROR: minimums/maximums not in proper order")
-            return (False, 0)
+            return (False, 0, 'improper_order')
 
         interwoven = []
         # first interweave the min/max pairs
@@ -199,20 +214,20 @@ class DataPlot:
             if val1 > val2:
                 if verbose:
                     print("ERROR: minimums/maximums not in proper order")
-                return (False, int(i / 2) + 1)
+                return (False, int(i / 2) + 1, 'improper_order')
 
         if len(minimums) != len(maximums):
             if verbose:
                 print("ERROR: Different number of minimums (" + str(len(minimums)) + ") than maximums (" + str(len(maximums)) + ")!")
-            return (False, minLength)
+            return (False, minLength, 'len_min_max_different')
 
         reqPeaks = self.requiredPeaks()
         if reqPeaks != len(minimums) or reqPeaks != len(maximums):
             if verbose:
                 print("ERROR: Expected " + str(reqPeaks) + " peaks but have " + str(len(minimums)) + ".")
-            return (False, -1)
+            return (False, -1, 'wrong_peak_count')
 
-        return (True, -1)
+        return (True, -1, None)
 
     def reset(self, val):
         self.determineMaxProminence()
@@ -229,6 +244,9 @@ class DataPlot:
     def dump(self, val):
         self.dumpCallback()
 
+    def prev(self, val):
+        self.prevCallback()
+
     def clear(self, val):
         self.minimums = np.array([], dtype=np.int_)
         self.maximums = np.array([], dtype=np.int_)
@@ -236,17 +254,19 @@ class DataPlot:
 
     # holding f key while clicking done overrides validation for better or for worse
     def done(self, event):
-        valid, _ = self.validateMinMax(verbose=True)
-        if not valid and event.key != 'f':
-            print("Hold f key while pressing " + self.doneButtonTitle + " to force data output (not recommended).")
+        valid, _, error = self.validateMinMax(verbose=event.key != 't')
+        if event.key == 't' and not valid:
+            print("Forcing output!")
+        if not valid and event.key != 't':
+            print("Hold t key while pressing " + self.doneButtonTitle + " to force data output (not recommended).")
             return
         # We can't calculate the average height and average duration if it's forced
-        if event.key != 'f':
+        if valid or error == 'wrong_peak_count':
             averageHeight, averageDuration = self.determineAveragePeakHeightWidth()
         else:
             averageHeight = averageDuration = 'N/A'
         minMaxPairs = self.getMaximumMinimumPairs()
-        self.doneCallback(self.column, not valid and event.key == 'f', minMaxPairs, averageHeight, averageDuration)
+        self.doneCallback(self.column, not valid and event.key == 't', minMaxPairs, averageHeight, averageDuration, plt)
 
     def title(self):
         return self.color + ", Intensity " + str(self.intensity) + " @ " + str(self.fps) + " fps (" + self.column + ") Expecting " + str(self.requiredPeaks()) + " pairs"
@@ -314,7 +334,7 @@ class DataPlot:
         offset = self.minMaxAreOffset(minPeaks, maxPeaks)
 
         # this code does some fancy tricks to find places where
-        # two max peaks or two min peaks sit between two max/min peaks
+        # two or more max peaks or two or more min peaks sit between two max/min peaks respectively
         for i in range(0, len(minPeaks) - 1):
             peak1 = minPeaks[i]
             peak2 = minPeaks[i+1]
@@ -326,7 +346,6 @@ class DataPlot:
                 valuesToRemove = list(map(lambda val: maxPeaks[val[1]], midPeaks))
                 for val in valuesToRemove:
                     maxPeaks.remove(val)
-                    print("REMOVED")
 
         for i in range(0, len(maxPeaks) - 1):
             peak1 = maxPeaks[i]
@@ -339,7 +358,6 @@ class DataPlot:
                 valuesToRemove = list(map(lambda val: minPeaks[val[1]], midPeaks))
                 for val in valuesToRemove:
                     minPeaks.remove(val)
-                    print("REMOVED")
 
         # make smarter b_1_75
 
@@ -349,18 +367,21 @@ class DataPlot:
     def plotData(self):
         maxima, minima = self.findPeaks()
 
-        validated, idx = self.validateMinMax()
+        validated, idx, error = self.validateMinMax()
 
         if validated:
             self.doneButton.color = 'green'
             self.doneButton.hovercolor = 'darkgreen'
+        elif error == 'wrong_peak_count':
+            self.doneButton.color = 'yellow'
+            self.doneButton.hovercolor = 'gold'
         else:
             self.doneButton.color = 'red'
             self.doneButton.hovercolor = 'darkred'
 
         self.ax.clear()
-        self.ax.set_title(self.title())
         self.ax.plot(self.xData, self.yData)
+
         if len(maxima) > 0:
             self.ax.plot(self.xData[maxima], self.yData[maxima], "o", alpha=0.7, color='darkgreen')
         if len(minima) > 0:
@@ -368,7 +389,7 @@ class DataPlot:
 
         minimums, maximiums = self.getOrderedMaximumAndMinimum(self.minimums, self.maximums)
 
-        valid, brokenIdx = self.validateMinMax()
+        valid, brokenIdx, _ = self.validateMinMax()
 
         for idx, val in enumerate(minimums):
             error = not valid and brokenIdx == idx
@@ -384,6 +405,9 @@ class DataPlot:
             self.ax.annotate(str(idx + 1) + " max", (self.xData[val], self.yData[val]), textcoords='offset pixels',
                              xytext=(15, 15), fontweight='bold', style=style,
                              fontsize=8, color=color, arrowprops={'arrowstyle': '->'})
+
+
+        self.ax.set_title(self.title(), color=self.titleColor)
 
         plt.show(block=False)
         plt.draw()
@@ -417,7 +441,7 @@ class DataPlot:
         if clickX < dataMinX:
             action(0, 'insert')
         elif clickX > dataMaxX:
-            action(len(self.xData), 'insert')
+            action(len(self.xData) - 1, 'insert')
         else:
             for i in range(0, len(self.xData)):
                 val = self.xData[i]

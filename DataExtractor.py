@@ -13,10 +13,10 @@ class DataExtractor:
             yData.append(float(row[yFieldname]))
         return (np.array(xData), np.array(yData))
 
-    def getAvailableColumns(self, background=False):
-        if background:
+    def getAvailableColumns(self, mode):
+        if mode == 'background':
             return list(filter(lambda val: val.endswith('B'), self.availableColumnNames))
-        else:
+        elif mode == 'plot':
             return list(filter(lambda val: not val.endswith('B'), self.availableColumnNames))
 
     def openFile(self, filename):

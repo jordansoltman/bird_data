@@ -9,13 +9,21 @@ class PlotDataWriter:
 
     def addLine(self, column, forced, minMaxPairs, averageHeight, averageDuration):
         self.data[column] = {
-            'forced': str(forced).lower(),
+            'forced': forced,
             'minMaxPairs': minMaxPairs,
             'averageHeight': averageHeight,
             'averageDuration': averageDuration
         }
 
-    def writeToFile(self, outputFilename):
+    # returns the data status of the column
+    # (Saved, Forced)
+    def getColumnStatus(self, column):
+        if column in self.data:
+            return (True, self.data[column]['forced'])
+        else:
+            return (False, False)
+
+    def writeToFile(self, outputDirectory):
         # find max number of min/max pairs
         maxPairs = 0
         for column in self.data:
@@ -28,23 +36,16 @@ class PlotDataWriter:
             fieldnames.append(str(i + 1) + ' Min X,Y')
             fieldnames.append(str(i + 1) + ' Max X,Y')
 
-        if outputFilename != None:
-            output = outputFilename
-        else:
-            baseDir = os.path.dirname(os.path.realpath(__file__))
-            directory = os.path.join(baseDir, 'output')
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-            output = os.path.join(directory, 'plot_' + str(datetime.datetime.now()) + '.csv')
+        output = os.path.join(outputDirectory, 'plot_data.csv')
 
         try:
             with open(output, mode='w') as csv_file:
-                writer = csv.writer(csv_file)
+                writer = csv.writer(csv_file, lineterminator='\n')
                 writer.writerow(fieldnames)
 
                 for column in self.data:
                     data = self.data[column]
-                    row = [column, data['forced'], data['averageDuration'], data['averageHeight']]
+                    row = [column, str(data['forced']).lower(), data['averageDuration'], data['averageHeight']]
                     for pair in data['minMaxPairs']:
                         _min, _max = pair
                         minX, minY = _min
@@ -54,5 +55,6 @@ class PlotDataWriter:
                     writer.writerow(row)
 
                 csv_file.close()
-        except:
+        except Exception as e:
             print("ERROR: There was an error outputing to ", output)
+            print(e)
