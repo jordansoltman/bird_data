@@ -7,17 +7,19 @@ from pathlib import Path
 import numpy as np
 
 class BirdData:
-    def __init__(self, filename, columns=None, backgroundOnly=False, outputDirectory=None, startColumn=None, saveImages=True):
+    def __init__(self, filename, columns=None, background=False, outputDirectory=None, startColumn=None, saveImages=True):
         self.dataExtractor = DataExtractor.DataExtractor(filename)
         self.plotDataWriter = PlotDataWriter.PlotDataWriter()
         self.saveImages = saveImages
-        self.dataPlot = DataPlot.DataPlot(self.done, self.skip, self.dump, self.exit, self.prev)
-        availablePlotColumns = self.dataExtractor.getAvailableColumns('plot')
+        self.dataPlot = DataPlot.DataPlot(self.done, self.skip, self.dump, self.exit, self.prev, background)
+        self.background = background
+        availablePlotColumns = self.dataExtractor.getAvailableColumns('background' if background else 'plot')
 
 
         try:
             if outputDirectory == None:
-                self.outputDirectory = os.path.join(os.getcwd(), str(Path(filename).with_suffix('')) + '_results_'  + str(int(time.time())))
+                filename = os.path.basename(filename) + '_results_'  + str(int(time.time()))
+                self.outputDirectory = os.path.join(os.getcwd(), filename)
             else:
                 self.outputDirectory = outputDirectory
 
@@ -30,8 +32,8 @@ class BirdData:
             if not os.path.exists(self.outputDirectory):
                 os.makedirs(self.outputDirectory)
             # attempt to add the image directory if it's required
-            if saveImages and not backgroundOnly:
-                self.imageDirectory = os.path.join(outputDirectory, 'plots')
+            if saveImages:
+                self.imageDirectory = os.path.join(self.outputDirectory, 'plots')
                 if not os.path.exists(self.imageDirectory):
                     os.makedirs(self.imageDirectory)
 
@@ -41,17 +43,14 @@ class BirdData:
             print(e)
             sys.exit()
 
-        availableBackgroundcolumns = self.dataExtractor.getAvailableColumns('background')
-
-        backgroundDataWriter = BackgroundDataWriter.BackgroundDataWriter()
-        for column in availableBackgroundcolumns:
-            _, yData = self.dataExtractor.extractData(column)
-            backgroundDataWriter.writeLine(column, sum(yData) / len(yData), np.var(yData))
-        backgroundDataWriter.writeToFile(self.outputDirectory)
-        print("Background data processing completed.")
-
-        if backgroundOnly:
-            sys.exit()
+        # availableBackgroundcolumns = self.dataExtractor.getAvailableColumns('background')
+        #
+        # backgroundDataWriter = BackgroundDataWriter.BackgroundDataWriter()
+        # for column in availableBackgroundcolumns:
+        #     _, yData = self.dataExtractor.extractData(column)
+        #     backgroundDataWriter.writeLine(column, sum(yData) / len(yData), np.var(yData))
+        # backgroundDataWriter.writeToFile(self.outputDirectory)
+        # print("Background data processing completed.")
 
         #Ensure that the column names are valid
         if columns != None:
@@ -104,14 +103,14 @@ class BirdData:
             self.plotDataWriter.writeToFile(self.outputDirectory)
             sys.exit()
 
-    def done(self, column, forced, minMaxPairs, averageHeight, averageDuration, plt):
+    def done(self, column, forced, minMaxPairs, averageHeight, averageDuration, stdDevHeight, stdDevWidth, plt):
         try:
             if self.saveImages:
                 plt.savefig(os.path.join(self.imageDirectory, column+'.png'))
         except Exception as e:
             print("Could not save " + column + " plot!")
             print(e)
-        self.plotDataWriter.addLine(column, forced, minMaxPairs, averageHeight, averageDuration)
+        self.plotDataWriter.addLine(column, forced, minMaxPairs, averageHeight, averageDuration, stdDevHeight, stdDevWidth)
         self.currentPlotIndex += 1
         self.plotNext()
 

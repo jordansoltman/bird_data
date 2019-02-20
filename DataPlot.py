@@ -9,7 +9,7 @@ colorSets = ['blue', 'orange', 'purple', 'magenta', 'brown', 'gold', 'lightskybl
 
 class DataPlot:
 
-    def __init__(self, doneCallback, skipCallback, dumpCallback, exitCallback, prevCallback, MAX_PROMINENCE=6.0, FALSE_MAXIMUM_ROW_DISTANCE = 30):
+    def __init__(self, doneCallback, skipCallback, dumpCallback, exitCallback, prevCallback, background, MAX_PROMINENCE=6.0, FALSE_MAXIMUM_ROW_DISTANCE = 30):
 
         self.MAX_PROMINENCE = MAX_PROMINENCE
         self.FALSE_MAXIMUM_ROW_DISTANCE = FALSE_MAXIMUM_ROW_DISTANCE
@@ -22,6 +22,8 @@ class DataPlot:
 
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
+
+        self.background = background
 
         self.ax.set_xlabel("Time")
         self.ax.set_ylabel("Voltage")
@@ -88,6 +90,7 @@ class DataPlot:
 
         parts = column.lower().split("_")
         if len(parts) != 3:
+            # should error here
             return
 
         color, intensity, fps = parts
@@ -101,7 +104,8 @@ class DataPlot:
 
         self.intensity = int(intensity)
 
-        self.fps = int(fps)
+
+        self.fps = int(fps[:-1] if self.background else fps)
 
         self.min_prominence = 0
         self.max_prominence = 0
@@ -132,7 +136,7 @@ class DataPlot:
         dataLength = max(len(maximums), len(minimums))
         for i in range(0, dataLength):
             if i < len(minimums):
-                _min = self.minimums[i]
+                _min = minimums[i]
                 minX = self.xData[_min]
                 minY = self.yData[_min]
             else:
@@ -140,9 +144,9 @@ class DataPlot:
                 minY = '-'
 
             if i < len(maximums):
-                _max = self.maximums[i]
+                _max = maximums[i]
                 maxX = self.xData[_max]
-                maxY = self.xData[_max]
+                maxY = self.yData[_max]
             else:
                 maxX = '-'
                 maxY = '-'
@@ -158,8 +162,9 @@ class DataPlot:
         minimums, maximums = self.getOrderedMaximumAndMinimum(self.minimums, self.maximums)
 
         dataLength = len(self.minimums)
-        totalWidth = 0
-        totalHeight = 0
+
+        widths = []
+        heights = []
 
         for i in range(0, dataLength):
             min = minimums[i]
@@ -171,18 +176,21 @@ class DataPlot:
 
             # we discard offset data
             if i != 0 or not self.minMaxAreOffset(self.minimums, self.maximums):
-                totalWidth += maxX - minX
+                widths.append(maxX - minX)
 
-            totalHeight += maxY - minY
+            heights.append(maxY - minY)
 
-        averageHeight = totalHeight / dataLength
-        averageWidth = totalWidth / dataLength
+        # this is wrong, average width might not be correct
+        averageHeight = np.mean(heights)
+        averageWidth = np.mean(widths)
+        heightStdDev = np.std(heights)
+        widthStdDev = np.std(widths)
 
-        # We can't calculate the offset for a single vale
+        # We can't calculate the offset for a single value
         if self.minMaxAreOffset(self.minimums, self.maximums) and dataLength == 1:
             averageWidth = 'N/A'
 
-        return (averageHeight, averageWidth)
+        return (averageHeight, averageWidth, heightStdDev, widthStdDev)
 
     def validateMinMax(self, verbose=False):
 
@@ -262,11 +270,11 @@ class DataPlot:
             return
         # We can't calculate the average height and average duration if it's forced
         if valid or error == 'wrong_peak_count':
-            averageHeight, averageDuration = self.determineAveragePeakHeightWidth()
+            averageHeight, averageDuration, stdDevHeight, stdDevDuration = self.determineAveragePeakHeightWidth()
         else:
             averageHeight = averageDuration = 'N/A'
         minMaxPairs = self.getMaximumMinimumPairs()
-        self.doneCallback(self.column, not valid and event.key == 't', minMaxPairs, averageHeight, averageDuration, plt)
+        self.doneCallback(self.column, not valid and event.key == 't', minMaxPairs, averageHeight, averageDuration, stdDevHeight, stdDevDuration, plt)
 
     def title(self):
         return self.color + ", Intensity " + str(self.intensity) + " @ " + str(self.fps) + " fps (" + self.column + ") Expecting " + str(self.requiredPeaks()) + " pairs"
